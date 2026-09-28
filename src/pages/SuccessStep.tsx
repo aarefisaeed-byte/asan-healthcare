@@ -28,7 +28,7 @@ export function SuccessStep({ file, memoryId, buyers, remaining, onAnother, onFi
         </span>
         <h1 className="relative mt-4 text-[21px] font-black">صورتحساب وکالتی فعال شد</h1>
         <p className="relative mt-2 text-[14.5px] leading-7 text-muted">
-          از این پس نمایندگان انتخاب‌شده می‌توانند برای «{file.title}» صورتحساب صادر کنند و صورتحساب‌ها از طریق معتمد مالیاتی کیسان ارسال می‌شوند.
+          از این پس بیمارستان‌های انتخاب‌شده می‌توانند برای «{file.title}» صورتحساب صادر کنند و صورتحساب‌ها از طریق معتمد مالیاتی کیسان ارسال می‌شوند.
         </p>
 
         <dl className="relative mt-5 grid gap-2.5 rounded-xl bg-surface p-4 text-right text-[14px]">
@@ -45,7 +45,7 @@ export function SuccessStep({ file, memoryId, buyers, remaining, onAnother, onFi
             </div>
           )}
           <div className="flex justify-between gap-3">
-            <dt className="shrink-0 text-muted">نمایندگان</dt>
+            <dt className="shrink-0 text-muted">بیمارستان‌ها</dt>
             <dd className="text-left font-medium">{buyers.map((b) => b.name).join('، ')}</dd>
           </div>
         </dl>

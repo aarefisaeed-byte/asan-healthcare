@@ -86,6 +86,7 @@ export default function App() {
 
       {screen === 'permission' && file && (
         <PermissionStep
+          user={user}
           file={file}
           onCancel={() => setExitOpen(true)}
           onBack={() => go('files')}

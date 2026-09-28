@@ -1,5 +1,6 @@
 /**
- * SMS providers. Each one exposes `sendOtp(mobile, code)` and throws on failure.
+ * SMS providers. Each one exposes `sendOtp(mobile, code)` (panel's own OTP template)
+ * and `sendText(mobile, text)` (free text), and throws on failure.
  *
  *  - parsgreen: https://sms.parsgreen.ir  (Apiv2/Message/SendOtp)
  *  - console:   prints the code to the server log — for local development only
@@ -49,6 +50,18 @@ function parsgreen(env) {
         throw new Error(`Parsgreen SendOtp failed (HTTP ${status}): ${reason}`)
       }
     },
+    async sendText(mobile, text) {
+      const { status, data, text: raw } = await postJson(
+        `${baseUrl}/Apiv2/Message/SendSms`,
+        { Authorization: `basic apikey:${apiKey}` },
+        { SmsBody: text, Mobiles: [mobile], SmsNumber: env.PARSGREEN_SMS_NUMBER || '' },
+      )
+      const ok = status === 200 && data && (data.R_Success === true || Number(data.SuccessCount) > 0)
+      if (!ok) {
+        const reason = data ? `R_Code=${data.R_Code} ${data.R_Message ?? ''} SuccessCount=${data.SuccessCount}` : raw.slice(0, 200)
+        throw new Error(`Parsgreen SendSms failed (HTTP ${status}): ${reason}`)
+      }
+    },
   }
 }
 
@@ -57,6 +70,9 @@ function consoleProvider() {
     name: 'console',
     async sendOtp(mobile, code) {
       console.log(`[sms:console] OTP for ${mobile}: ${code}`)
+    },
+    async sendText(mobile, text) {
+      console.log(`[sms:console] text for ${mobile}:\n${text}`)
     },
   }
 }

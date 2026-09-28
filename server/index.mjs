@@ -4,6 +4,8 @@
  *
  *   POST /api/otp/send    { nationalCode, mobile }  → { ttl }
  *   POST /api/otp/verify  { nationalCode, mobile, code } → { user }
+ *   POST /api/access/send   { economicNumber }        → { ttl }        (needs login session)
+ *   POST /api/access/verify { economicNumber, code }  → { memoryId }   (needs login session)
  *   GET  /api/files       → { files } | 501 not_configured   (needs login session)
  *   GET  /api/health      → { ok, sms, inquiry }
  *
@@ -69,6 +71,7 @@ const record = (key) => hits.get(key)?.push(Date.now()) ?? hits.set(key, [Date.n
 setInterval(() => {
   const now = Date.now()
   for (const [m, o] of otps) if (o.expiresAt < now - 60_000) otps.delete(m)
+  for (const [m, o] of accessCodes) if (o.expiresAt < now - 60_000) accessCodes.delete(m)
   for (const [k, list] of hits) if (!list.some((t) => now - t < 86_400_000)) hits.delete(k)
 }, 60_000).unref()
 
@@ -166,6 +169,77 @@ async function listFiles(req) {
   }
 }
 
+/* ───────────── access code for Keysun (second SMS) ───────────── */
+
+/** One Jalali year from today, e.g. "1406/07/06" (Latin digits). */
+function accessExpiry(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US-u-ca-persian-nu-latn', { year: 'numeric', month: 'numeric', day: 'numeric', timeZone: 'Asia/Tehran' }).formatToParts(now)
+  const get = (t) => Number(parts.find((p) => p.type === t)?.value)
+  const m = get('month')
+  const d = Math.min(get('day'), m === 12 ? 29 : 31)
+  return `${get('year') + 1}/${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}`
+}
+
+function accessSmsText(economicNumber, expiry, code) {
+  return [
+    `مؤدی گرامی با شماره اقتصادی «${economicNumber}»، با دراختیار قرار دادن رمز زیر به «شرکت داده پردازی کیسان»، دسترسی های زیر تا تاریخ «${expiry}»، به این شرکت اعطا خواهد شد.`,
+    'لیست دسترسی های درخواستی شما:',
+    'دریافت شناسه یکتا حافظه مالیاتی',
+    'مراقب سوءاستفاده سودجویان برای دسترسی به کارپوشه مالیاتی خود باشید.',
+    `رمز: ${code}`,
+  ].join('\n')
+}
+
+/** mobile → { hash, economicNumber, expiresAt, attempts } */
+const accessCodes = new Map()
+
+function sessionOwnsFile(session, economicNumber) {
+  return typeof economicNumber === 'string' && /^\d{14}$/.test(economicNumber) && economicNumber.startsWith(session.nationalCode)
+}
+
+async function sendAccessCode(req, body) {
+  const session = getSession(req)
+  if (!session) return [401, { error: 'unauthorized' }]
+  const { economicNumber } = body
+  if (!sessionOwnsFile(session, economicNumber)) return [400, { error: 'invalid_input' }]
+  const { mobile } = session
+  const now = Date.now()
+  const live = accessCodes.get(mobile)
+  if (live && live.expiresAt > now && live.economicNumber === economicNumber) {
+    return [200, { ttl: Math.ceil((live.expiresAt - now) / 1000), reused: true }]
+  }
+  if (countRecent(`acc:${mobile}`, 86_400_000) >= MOBILE_SENDS_PER_DAY) return [429, { error: 'rate_limited' }]
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
+  try {
+    await sms.sendText(mobile, accessSmsText(economicNumber, accessExpiry(), code))
+  } catch (e) {
+    console.error(`[access] send failed for ${mobile.slice(0, 4)}***${mobile.slice(-4)}:`, e.message)
+    return [502, { error: 'service_unavailable' }]
+  }
+  record(`acc:${mobile}`)
+  accessCodes.set(mobile, { hash: hashCode(`acc:${mobile}`, code), economicNumber, expiresAt: now + OTP_TTL * 1000, attempts: 0 })
+  return [200, { ttl: OTP_TTL }]
+}
+
+async function verifyAccessCode(req, body) {
+  const session = getSession(req)
+  if (!session) return [401, { error: 'unauthorized' }]
+  const { economicNumber, code } = body
+  if (!sessionOwnsFile(session, economicNumber) || typeof code !== 'string' || !/^\d{6}$/.test(code)) return [400, { error: 'otp_invalid' }]
+  const a = accessCodes.get(session.mobile)
+  if (!a || a.economicNumber !== economicNumber || a.expiresAt < Date.now()) return [400, { error: 'otp_expired' }]
+  if (a.attempts >= MAX_ATTEMPTS) return [429, { error: 'too_many_attempts' }]
+  a.attempts++
+  if (!timingSafeEqual(a.hash, hashCode(`acc:${session.mobile}`, code))) {
+    return [400, { error: a.attempts >= MAX_ATTEMPTS ? 'too_many_attempts' : 'otp_invalid' }]
+  }
+  accessCodes.delete(session.mobile)
+  // Demo: the memory ID would come from the tax organisation once the real service exists.
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const memoryId = Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join('')
+  return [200, { memoryId }]
+}
+
 /* ───────────── http plumbing ───────────── */
 
 const MIME = {
@@ -230,6 +304,8 @@ const server = http.createServer(async (req, res) => {
       if (req.method !== 'POST') return send(res, 405, { error: 'method_not_allowed' })
       const body = await readJson(req)
       if (req.url === '/api/otp/send') return send(res, ...(await sendOtp(body, ip)))
+      if (req.url === '/api/access/send') return send(res, ...(await sendAccessCode(req, body)))
+      if (req.url === '/api/access/verify') return send(res, ...(await verifyAccessCode(req, body)))
       if (req.url === '/api/otp/verify') {
         const [status, payload] = await verifyOtp(body)
         if (status !== 200) return send(res, status, payload)

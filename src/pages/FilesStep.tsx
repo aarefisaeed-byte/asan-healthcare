@@ -192,7 +192,7 @@ export function FilesStep({ user, files, setFiles, completed, onCancel, onNext }
             <b className="font-bold text-ink" dir="ltr">
               {keysunNotice?.keysunMemoryId}
             </b>{' '}
-            در معتمد مالیاتی کیسان دارد و نیازی به اعطای دوباره مجوز نیست. مستقیم به انتخاب نماینده می‌روید.
+            در معتمد مالیاتی کیسان دارد و نیازی به اعطای دوباره مجوز نیست. مستقیم به انتخاب بیمارستان می‌روید.
           </>
         }
         footer={
@@ -205,7 +205,7 @@ export function FilesStep({ user, files, setFiles, completed, onCancel, onNext }
             }}
             icon={<ArrowLeft className="size-5" aria-hidden />}
           >
-            ادامه به انتخاب نماینده
+            ادامه به انتخاب بیمارستان
           </Button>
         }
       />

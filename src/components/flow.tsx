@@ -3,7 +3,7 @@ import { Check, LogOut } from 'lucide-react'
 import { Button, Modal } from './ui'
 import { toFa } from '../lib/format'
 
-export const STEPS = ['پرونده‌های من', 'مجوز دسترسی کیسان', 'انتخاب نماینده']
+export const STEPS = ['پرونده‌های من', 'مجوز دسترسی کیسان', 'انتخاب بیمارستان']
 
 /** Compact three-step progress that fits a phone width. */
 export function Stepper({ current }: { current: number }) {

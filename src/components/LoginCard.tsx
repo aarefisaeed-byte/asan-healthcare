@@ -47,12 +47,12 @@ export const LoginCard = forwardRef<HTMLDivElement, Props>(function LoginCard({ 
   return (
     <div ref={ref} id="login" className="scroll-mt-6">
       <form onSubmit={submit} noValidate className="overflow-hidden rounded-2xl bg-white text-ink shadow-[0_24px_60px_-20px_rgba(4,12,40,0.55)]">
-        <div className="border-b border-mist px-5 pb-4 pt-5">
-          <h2 className="text-lg font-bold">فعال‌سازی صورتحساب وکالتی</h2>
-          <p className="mt-1 text-[14px] text-muted">با کد ملی و شماره موبایل خود وارد شوید.</p>
+        <div className="border-b border-mist px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5">
+          <h2 className="text-[17px] font-bold">ورود به آسان</h2>
+          <p className="mt-0.5 text-[13.5px] text-muted [@media(max-height:620px)]:hidden">با کد ملی و شماره موبایل خود وارد شوید.</p>
         </div>
 
-        <div className="flex flex-col gap-4 px-5 pb-5 pt-4">
+        <div className="flex flex-col gap-3 px-4 pb-4 pt-3 sm:gap-4 sm:px-5 sm:pb-5 sm:pt-4">
           {fields.map((f) => (
             <div key={f.id} className="flex flex-col gap-1.5">
               <label htmlFor={f.id} className="text-[14px] font-bold">
@@ -90,7 +90,7 @@ export const LoginCard = forwardRef<HTMLDivElement, Props>(function LoginCard({ 
             </div>
           ))}
 
-          <p className="flex items-start gap-1.5 text-[13px] leading-6 text-muted">
+          <p className="flex items-start gap-1.5 text-[12.5px] leading-5 text-muted">
             <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
             شماره موبایل واردشده باید متعلق به صاحب کد ملی باشد.
           </p>
@@ -100,7 +100,7 @@ export const LoginCard = forwardRef<HTMLDivElement, Props>(function LoginCard({ 
           </Button>
         </div>
 
-        <div className="flex items-center justify-center gap-1.5 bg-surface px-5 py-3 text-[12.5px] text-muted">
+        <div className="flex items-center justify-center gap-1.5 bg-surface px-4 py-2.5 text-[12px] text-muted">
           <Lock className="size-3.5" aria-hidden />
           تمامی صورتحساب‌ها از طریق معتمد مالیاتی کیسان ارسال می‌شوند.
         </div>

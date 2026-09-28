@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
-import { ArrowLeft, Building2, Check, ChevronDown, Hash, Search, SearchX, Type, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ArrowLeft, Building2, Check, MapPin, Phone, Search, SearchX, X } from 'lucide-react'
 import { Button, Modal } from '../components/ui'
 import { BottomBar, PageTitle, Stepper } from '../components/flow'
-import { grantPowerOfAttorney, searchBuyers, type Buyer, type TaxFile } from '../lib/api'
-import { digitsOnly, toFa } from '../lib/format'
+import { ALL_BUYERS, grantPowerOfAttorney, searchBuyers, type Buyer, type TaxFile } from '../lib/api'
+import { toFa } from '../lib/format'
 
 type Props = {
   file: TaxFile
@@ -11,31 +11,16 @@ type Props = {
   onDone: (buyers: Buyer[]) => void
 }
 
+const PAGE = 20
+
 export function BuyersStep({ file, onCancel, onDone }: Props) {
-  const [econ, setEcon] = useState('')
-  const [name, setName] = useState('')
-  const [results, setResults] = useState<Buyer[] | null>(null)
-  const [searching, setSearching] = useState(false)
+  const [query, setQuery] = useState('')
+  const [shown, setShown] = useState(PAGE)
   const [selected, setSelected] = useState<Buyer[]>([])
-  const [open, setOpen] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const run = async (e?: React.FormEvent) => {
-    e?.preventDefault()
-    setSearching(true)
-    try {
-      setResults(await searchBuyers(econ, name))
-    } finally {
-      setSearching(false)
-    }
-  }
-
-  useEffect(() => {
-    run()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
+  const results = useMemo(() => searchBuyers(query), [query])
   const isSel = (b: Buyer) => selected.some((s) => s.id === b.id)
   const toggle = (b: Buyer) => setSelected((s) => (isSel(b) ? s.filter((x) => x.id !== b.id) : [...s, b]))
 
@@ -52,137 +37,100 @@ export function BuyersStep({ file, onCancel, onDone }: Props) {
   return (
     <>
       <Stepper current={2} />
-      <PageTitle
-        title="انتخاب نماینده صدور صورتحساب"
-        subtitle={
-          <>
-            بیمارستان یا مرکز درمانی‌ای را که از طرف <b className="font-bold text-ink">{file.title}</b> صورتحساب صادر می‌کند، با شماره اقتصادی یا نام جست‌وجو و انتخاب کنید.
-          </>
-        }
-      />
+      <PageTitle title="انتخاب بیمارستان" subtitle="بیمارستانی را که از طرف شما صورتحساب صادر می‌کند جست‌وجو و انتخاب کنید." />
 
-      <form onSubmit={run} className="mt-5 grid gap-3 rounded-xl border border-line p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="buyer-econ" className="text-[14px] font-bold">
-            شماره اقتصادی نماینده
-          </label>
-          <div className="flex h-12 items-center gap-2 rounded-lg border border-[#b9bdc7] px-3 focus-within:border-navy-600">
-            <Hash className="size-4 text-[#8a8f9c]" aria-hidden />
-            <input
-              id="buyer-econ"
-              inputMode="numeric"
-              dir="ltr"
-              value={toFa(econ)}
-              onChange={(e) => setEcon(digitsOnly(e.target.value).slice(0, 14))}
-              placeholder="مثلاً ۱۰۱۰۰۴۵۲۳۱۰"
-              className="h-full min-w-0 flex-1 bg-transparent text-right text-[16px] outline-none placeholder:text-[#a9adb8]"
-            />
-          </div>
+      <div className="sticky z-20 -mx-4 mt-4 bg-white px-4 pb-3 pt-1 sm:-mx-6 sm:px-6" style={{ top: 'calc(64px + env(safe-area-inset-top, 0px))' }}>
+        <label htmlFor="buyer-search" className="sr-only">
+          جست‌وجوی بیمارستان
+        </label>
+        <div className="flex h-12 items-center gap-2 rounded-xl border border-[#b9bdc7] bg-white px-3 focus-within:border-navy-600">
+          <Search className="size-5 text-[#8a8f9c]" aria-hidden />
+          <input
+            id="buyer-search"
+            type="search"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setShown(PAGE)
+            }}
+            placeholder="نام بیمارستان یا محله، مثلاً آتیه یا ونک"
+            className="h-full min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-[#a9adb8]"
+          />
+          {query && (
+            <button onClick={() => setQuery('')} className="-m-1 rounded-md p-1 text-muted hover:bg-surface" aria-label="پاک کردن جست‌وجو">
+              <X className="size-4" aria-hidden />
+            </button>
+          )}
         </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="buyer-name" className="text-[14px] font-bold">
-            نام نماینده
-          </label>
-          <div className="flex h-12 items-center gap-2 rounded-lg border border-[#b9bdc7] px-3 focus-within:border-navy-600">
-            <Type className="size-4 text-[#8a8f9c]" aria-hidden />
-            <input
-              id="buyer-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="مثلاً بیمارستان آتیه"
-              className="h-full min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-[#a9adb8]"
-            />
-          </div>
-        </div>
-        <Button type="submit" loading={searching} className="sm:w-36" icon={<Search className="size-5" aria-hidden />}>
-          جست‌وجو
-        </Button>
-      </form>
 
-      {selected.length > 0 && (
-        <div className="mt-4">
-          <p className="text-[13.5px] font-bold text-muted">نمایندگان انتخاب‌شده ({toFa(selected.length)})</p>
-          <ul className="mt-2 flex flex-wrap gap-2">
+        {selected.length > 0 && (
+          <ul className="mt-3 flex flex-wrap gap-2" aria-label="بیمارستان‌های انتخاب‌شده">
             {selected.map((b) => (
-              <li key={b.id} className="flex items-center gap-1 rounded-full bg-navy py-1 pl-1 pr-3 text-[13.5px] font-medium text-white">
-                {b.name}
+              <li key={b.id} className="flex items-center gap-1 rounded-full bg-navy py-1 pl-1 pr-3 text-[13px] font-medium text-white">
+                {b.name.replace(/^بیمارستان\s+/, '')}
                 <button onClick={() => toggle(b)} className="grid size-6 place-items-center rounded-full hover:bg-white/15" aria-label={`حذف ${b.name}`}>
                   <X className="size-3.5" aria-hidden />
                 </button>
               </li>
             ))}
           </ul>
-        </div>
-      )}
-
-      <div className="mt-5">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-[16px] font-bold">نمایندگان ثبت‌شده در کیسان</h2>
-          {results && <span className="text-[13px] text-muted">{toFa(results.length)} مورد</span>}
-        </div>
-
-        {results && results.length === 0 && !searching && (
-          <div className="mt-3 flex flex-col items-center gap-2 rounded-xl border border-line px-6 py-10 text-center">
-            <SearchX className="size-8 text-[#8a8f9c]" aria-hidden />
-            <p className="text-[14.5px] font-bold">نماینده‌ای با این مشخصات پیدا نشد</p>
-            <p className="max-w-xs text-[13.5px] leading-6 text-muted">شماره اقتصادی را دوباره بررسی کنید یا بخشی از نام را جست‌وجو کنید.</p>
-          </div>
         )}
+      </div>
 
-        <ul className={`mt-3 grid gap-3 lg:grid-cols-2 ${searching ? 'opacity-50' : ''}`}>
-          {results?.map((b) => {
+      <p className="mt-1 text-[13px] text-muted">
+        {query ? `${toFa(results.length)} نتیجه` : `${toFa(ALL_BUYERS.length)} بیمارستان و مرکز درمانی تهران`}
+      </p>
+
+      {results.length === 0 ? (
+        <div className="mt-3 flex flex-col items-center gap-2 rounded-xl border border-line px-6 py-10 text-center">
+          <SearchX className="size-8 text-[#8a8f9c]" aria-hidden />
+          <p className="text-[14.5px] font-bold">بیمارستانی با این نام پیدا نشد</p>
+          <p className="max-w-xs text-[13.5px] leading-6 text-muted">بخشی از نام را بنویسید، مثلاً «میلاد» به‌جای «بیمارستان میلاد».</p>
+        </div>
+      ) : (
+        <ul className="mt-3 grid gap-2 lg:grid-cols-2">
+          {results.slice(0, shown).map((b) => {
             const on = isSel(b)
-            const expanded = open === b.id
             return (
-              <li key={b.id} className={`rounded-xl border transition-colors ${on ? 'border-[#7fb49a] bg-ok-50' : 'border-line bg-white'}`}>
-                <div className="flex items-center gap-3 p-4">
-                  <button
-                    onClick={() => toggle(b)}
-                    aria-pressed={on}
-                    aria-label={`${on ? 'لغو انتخاب' : 'انتخاب'} ${b.name}`}
-                    className={`grid size-6 shrink-0 place-items-center rounded-md border-2 ${on ? 'border-navy bg-navy text-white' : 'border-[#8a8f9c] bg-white'}`}
-                  >
-                    {on && <Check className="size-4" strokeWidth={3} aria-hidden />}
-                  </button>
-                  <button onClick={() => toggle(b)} className="min-w-0 flex-1 text-right">
-                    <span className="block text-[15.5px] font-bold">{b.name}</span>
-                    <span className="mt-0.5 block text-[13px] text-muted tabular-nums">شماره اقتصادی: {toFa(b.economicNumber)}</span>
-                  </button>
-                  <button
-                    onClick={() => setOpen(expanded ? null : b.id)}
-                    aria-expanded={expanded}
-                    aria-label="جزئیات"
-                    className="-m-2 rounded-lg p-2 text-muted hover:bg-surface"
-                  >
-                    <ChevronDown className={`size-5 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden />
-                  </button>
-                </div>
-                {expanded && (
-                  <dl className="anim-fade grid gap-1.5 border-t border-black/5 px-4 pb-4 pt-3 text-[13.5px]">
-                    <div className="flex gap-1.5">
-                      <dt className="shrink-0 text-muted">آدرس:</dt>
-                      <dd>{b.address}</dd>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <dt className="text-muted">شماره تماس:</dt>
-                      <dd dir="ltr" className="tabular-nums">
-                        {toFa(b.phone)}
-                      </dd>
-                    </div>
-                  </dl>
-                )}
+              <li key={b.id}>
+                <button
+                  onClick={() => toggle(b)}
+                  aria-pressed={on}
+                  className={`flex w-full items-start gap-3 rounded-xl border p-3.5 text-right transition-colors ${on ? 'border-[#7fb49a] bg-ok-50' : 'border-line bg-white hover:border-[#b9bdc7]'}`}
+                >
+                  <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-md border-2 ${on ? 'border-navy bg-navy text-white' : 'border-[#8a8f9c] bg-white'}`} aria-hidden>
+                    {on && <Check className="size-4" strokeWidth={3} />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[15px] font-bold leading-6">{b.name}</span>
+                    <span className="mt-1 flex items-start gap-1 text-[13px] leading-6 text-muted">
+                      <MapPin className="mt-1 size-3.5 shrink-0" aria-hidden />
+                      <span className="line-clamp-2">{b.address}</span>
+                    </span>
+                    <span className="mt-0.5 flex items-center gap-1 text-[13px] text-muted">
+                      <Phone className="size-3.5 shrink-0" aria-hidden />
+                      <span dir="ltr">{toFa(b.phone)}</span>
+                    </span>
+                  </span>
+                </button>
               </li>
             )
           })}
         </ul>
-      </div>
+      )}
+
+      {results.length > shown && (
+        <button onClick={() => setShown((n) => n + PAGE)} className="mx-auto mt-4 block rounded-lg border border-navy px-5 py-2 text-[14px] font-bold text-navy hover:bg-navy-50">
+          نمایش بیشتر ({toFa(results.length - shown)})
+        </button>
+      )}
 
       <BottomBar>
         <Button variant="outline" className="w-[36%] sm:w-40" onClick={onCancel}>
           انصراف
         </Button>
         <Button className="flex-1 sm:max-w-72" disabled={selected.length === 0} onClick={() => setConfirming(true)} icon={<ArrowLeft className="size-5" aria-hidden />}>
-          {selected.length ? `ثبت ${toFa(selected.length)} نماینده` : 'ثبت و ادامه'}
+          {selected.length ? `ثبت ${toFa(selected.length)} بیمارستان` : 'یک بیمارستان انتخاب کنید'}
         </Button>
       </BottomBar>
 
@@ -190,8 +138,8 @@ export function BuyersStep({ file, onCancel, onDone }: Props) {
         open={confirming}
         onClose={() => setConfirming(false)}
         icon={<Check className="mt-0.5 size-6 shrink-0 text-navy" aria-hidden />}
-        title="تأیید نمایندگان"
-        subtitle={`این نمایندگان اجازه صدور صورتحساب وکالتی برای «${file.title}» را می‌گیرند.`}
+        title="تأیید انتخاب"
+        subtitle={`این بیمارستان‌ها اجازه صدور صورتحساب وکالتی برای «${file.title}» را می‌گیرند.`}
         footer={
           <>
             <Button variant="outline" className="w-[36%]" onClick={() => setConfirming(false)}>
@@ -209,9 +157,9 @@ export function BuyersStep({ file, onCancel, onDone }: Props) {
               <span className="grid size-10 shrink-0 place-items-center rounded-full bg-navy-50 text-navy-600">
                 <Building2 className="size-5" aria-hidden />
               </span>
-              <div>
+              <div className="min-w-0">
                 <p className="text-[14.5px] font-bold">{b.name}</p>
-                <p className="text-[13px] text-muted tabular-nums">شماره اقتصادی: {toFa(b.economicNumber)}</p>
+                <p className="truncate text-[13px] text-muted">{b.address}</p>
               </div>
             </li>
           ))}

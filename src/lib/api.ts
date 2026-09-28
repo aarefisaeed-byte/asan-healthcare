@@ -1,3 +1,5 @@
+import HOSPITALS from '../data/hospitals.json'
+
 /**
  * Service layer. Everything the UI needs from the outside world goes through here,
  * so the mock implementations can later be swapped for real services
@@ -10,8 +12,8 @@
  *  - mobile ending in 0000          → Shahkar mismatch (mobile not owned by national code)
  *  - mobile 09129999999             → service outage while sending the code
  *  - mobile ending in 1111          → no tax files found (empty state)
- *  Permission to Keysun
- *  - organisation OTP 000000        → «کد نادرست است»
+ *  Permission to Keysun (preview only; production sends a real SMS)
+ *  - access code 000000             → «کد نادرست است»
  *  Anything else succeeds.
  */
 
@@ -148,70 +150,71 @@ export async function fetchTaxFiles(user: User): Promise<TaxFile[]> {
 
 /* ───────────────────────── Permission to Keysun ───────────────────────── */
 
-export type Permission = { id: string; title: string; description: string }
+/** The only access requested from the taxpayer. Fixed and always selected. */
+export const ACCESS_LABEL = 'دریافت شناسه یکتای حافظه مالیاتی'
 
-export const PERMISSIONS: Permission[] = [
-  { id: 'token', title: 'تفویض توکن', description: 'مشاهده، ایجاد و مدیریت توکن‌های دسترسی' },
-  { id: 'sale_search', title: 'جست‌وجوی صورتحساب فروش', description: 'مشاهده و جست‌وجوی صورتحساب‌های فروش ثبت‌شده' },
-  { id: 'buy_search', title: 'جست‌وجوی صورتحساب خرید', description: 'مشاهده و جست‌وجوی صورتحساب‌های خرید ثبت‌شده' },
-  { id: 'buy_approve', title: 'تأیید و رد صورتحساب خرید', description: 'بررسی و تغییر وضعیت صورتحساب‌های خرید با تأیید یا رد' },
-  { id: 'vsale_search', title: 'جست‌وجوی صورتحساب فروش مجازی', description: 'مشاهده و جست‌وجوی صورتحساب‌های فروش مجازی ثبت‌شده' },
-  { id: 'vbuy_search', title: 'جست‌وجوی صورتحساب خرید مجازی', description: 'مشاهده و جست‌وجوی صورتحساب‌های خرید مجازی ثبت‌شده' },
-  { id: 'vsale_approve', title: 'تأیید و رد صورتحساب فروش مجازی', description: 'بررسی و تغییر وضعیت صورتحساب‌های فروش مجازی با تأیید یا رد' },
-  { id: 'contract_search', title: 'جست‌وجوی قرارداد', description: 'مشاهده و جست‌وجوی قراردادهای ثبت‌شده و مرتبط' },
-  { id: 'contract_approve', title: 'تأیید و رد قرارداد', description: 'بررسی و تغییر وضعیت قراردادها با تأیید یا رد آن‌ها' },
-]
-
-/** Always granted — Keysun needs it to receive the memory ID. */
-export const REQUIRED_PERMISSION = 'token'
-
-export type Duration = { id: string; label: string; days: number }
-
-export const DURATIONS: Duration[] = [
-  { id: '1w', label: '۱ هفته', days: 7 },
-  { id: '1m', label: '۱ ماهه', days: 30 },
-  { id: '3m', label: '۳ ماهه', days: 90 },
-  { id: '6m', label: '۶ ماهه', days: 180 },
-  { id: '12m', label: '۱۲ ماهه', days: 365 },
-]
+/** Access is always granted for one Jalali year from today. Returns "1406/07/06" (Latin digits). */
+export function accessExpiry(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US-u-ca-persian-nu-latn', { year: 'numeric', month: 'numeric', day: 'numeric', timeZone: 'Asia/Tehran' }).formatToParts(now)
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value)
+  const y = get('year') + 1
+  const m = get('month')
+  const d = Math.min(get('day'), m === 12 ? 29 : 31) // Esfand 30 may not exist next year
+  return `${y}/${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}`
+}
 
 let orgOtpIssuedAt = 0
 
-/** The tax organisation texts a code to the mobile registered on the tax file. */
-export async function requestKeysunAccess(_file: TaxFile, _permissions: string[], _duration: Duration): Promise<{ maskedMobile: string }> {
+/** Sends the access code by SMS to the mobile used at login. Resolves with the code lifetime in seconds. */
+export async function requestKeysunAccess(file: TaxFile): Promise<number> {
+  if (USE_SERVER) return (await post<{ ttl: number }>('/api/access/send', { economicNumber: file.economicNumber })).ttl
   await wait(900)
   orgOtpIssuedAt = Date.now()
-  return { maskedMobile: '۰۹۱۲***۴۵۶۷' }
+  return OTP_TTL_SECONDS
 }
 
 export async function confirmKeysunAccess(file: TaxFile, code: string): Promise<{ memoryId: string }> {
-  await wait(1100)
-  if (Date.now() - orgOtpIssuedAt > OTP_TTL_SECONDS * 1000) throw new ApiError('otp_expired')
-  if (code === '000000') throw new ApiError('otp_invalid')
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  const memoryId = Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('')
+  let memoryId: string
+  if (USE_SERVER) {
+    memoryId = (await post<{ memoryId: string }>('/api/access/verify', { economicNumber: file.economicNumber, code })).memoryId
+  } else {
+    await wait(1100)
+    if (Date.now() - orgOtpIssuedAt > OTP_TTL_SECONDS * 1000) throw new ApiError('otp_expired')
+    if (code === '000000') throw new ApiError('otp_invalid')
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    memoryId = Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('')
+  }
   file.keysunMemoryId = memoryId
   return { memoryId }
 }
 
-/* ───────────────────────── Buyers (representatives) ───────────────────────── */
+/* ───────────────────────── Representatives (Tehran hospitals) ───────────────────────── */
 
-export type Buyer = { id: string; name: string; economicNumber: string; address: string; phone: string }
+export type Buyer = { id: string; name: string; kind: string; phone: string; address: string }
 
-const BUYERS: Buyer[] = [
-  { id: 'b1', name: 'بیمارستان شهدای تجریش', economicNumber: '10100452310', address: 'تهران، میدان تجریش، خیابان شهرداری', phone: '021-22718001' },
-  { id: 'b2', name: 'بیمارستان آتیه', economicNumber: '10102784561', address: 'تهران، شهرک غرب، بلوار فرحزادی', phone: '021-82721000' },
-  { id: 'b3', name: 'بیمارستان پارسیان', economicNumber: '10103345987', address: 'تهران، خیابان شهید بهشتی، خیابان پاکستان', phone: '021-88752020' },
-  { id: 'b4', name: 'بیمارستان میلاد', economicNumber: '10100998712', address: 'تهران، بزرگراه همت، بیمارستان میلاد', phone: '021-82401000' },
-  { id: 'b5', name: 'بیمارستان جم', economicNumber: '10101234876', address: 'تهران، خیابان طالقانی، خیابان فریمان', phone: '021-88829000' },
-  { id: 'b6', name: 'کلینیک ویژه دی', economicNumber: '10105567234', address: 'تهران، خیابان ولیعصر، بالاتر از میدان ونک', phone: '021-88792022' },
-  { id: 'b7', name: 'بیمارستان کسری', economicNumber: '10106678345', address: 'تهران، خیابان ولیعصر، خیابان کسری', phone: '021-89391000' },
-]
+export const ALL_BUYERS = HOSPITALS as Buyer[]
 
-export async function searchBuyers(economicNumber: string, name: string): Promise<Buyer[]> {
-  await wait(600)
-  const n = name.trim()
-  return BUYERS.filter((b) => (!economicNumber || b.economicNumber.includes(economicNumber)) && (!n || b.name.includes(n)))
+/** Folds Persian spelling variants so «ولیعصر», «ولی‌عصر» and «ولي عصر» all match. */
+export function normalizeFa(s: string): string {
+  return s
+    .replace(/[يى]/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .replace(/[ۀة]/g, 'ه')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/[ً-ٟـ]/g, '') // harakat, tatweel
+    .replace(/[‌\s()«»،,.-]+/g, '')
+    .toLowerCase()
+}
+
+const INDEX = ALL_BUYERS.map((b) => ({ b, name: normalizeFa(b.name), all: normalizeFa(`${b.name} ${b.address}`) }))
+
+/** Matches every word of the query against name + address; name matches come first. */
+export function searchBuyers(query: string): Buyer[] {
+  const words = query.split(/\s+/).map(normalizeFa).filter(Boolean)
+  if (!words.length) return ALL_BUYERS
+  return INDEX.filter((x) => words.every((w) => x.all.includes(w)))
+    .sort((a, b) => Number(words.every((w) => b.name.includes(w))) - Number(words.every((w) => a.name.includes(w))))
+    .map((x) => x.b)
 }
 
 export async function grantPowerOfAttorney(_file: TaxFile, _buyers: Buyer[]): Promise<void> {

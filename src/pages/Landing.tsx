@@ -113,26 +113,26 @@ export function Landing({ onLoggedIn }: Props) {
         <Circuits className="pointer-events-none absolute -left-24 top-24 w-[340px] text-white/[0.05] sm:w-[440px]" />
         <Circuits className="pointer-events-none absolute -right-40 -top-10 hidden w-[380px] rotate-180 text-white/[0.04] lg:block" />
 
-        <div className="relative mx-auto max-w-6xl px-4 sm:px-6" style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}>
+        <div className="relative mx-auto max-w-6xl px-4 sm:px-6" style={{ paddingTop: 'calc(8px + env(safe-area-inset-top, 0px))' }}>
           <nav className="flex items-center py-2">
             <Logo tone="light" size="sm" />
           </nav>
 
-          <div className="grid items-center gap-8 pb-10 pt-8 lg:grid-cols-[1.1fr_1fr] lg:gap-16 lg:pb-20 lg:pt-14">
-            <div className="flex flex-col gap-5">
-              <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[13px] font-medium text-white/90">
+          <div className="grid items-center gap-5 pb-6 pt-3 lg:grid-cols-[1.1fr_1fr] lg:gap-16 lg:pb-20 lg:pt-14">
+            <div className="flex flex-col gap-2 lg:gap-5">
+              <span className="hidden w-fit items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[13px] font-medium text-white/90 lg:inline-flex">
                 <Stethoscope className="size-4 text-sun" aria-hidden />
                 ویژه پزشکان و مراکز درمانی
               </span>
-              <h1 className="text-[40px] font-black leading-[1.25] sm:text-5xl lg:text-6xl">
+              <h1 className="text-[28px] font-black leading-[1.35] sm:text-5xl lg:text-6xl">
                 صدور صورتحساب
                 <br />
                 <span className="text-sun">ویژه حوزه درمان</span>
               </h1>
-              <p className="max-w-md text-[16px] leading-8 text-white/80">
-                صورتحساب‌های خدمات درمانی خود را از طریق نماینده مورد اعتماد، ساده‌تر و بدون دردسر ثبت کنید.
+              <p className="max-w-md text-[14.5px] leading-7 text-white/80 lg:text-[16px] lg:leading-8 [@media(max-height:620px)]:hidden">
+                صورتحساب خدمات شما را بیمارستان طرف قرارداد ثبت می‌کند؛ ساده و بدون دردسر.
               </p>
-              <ul className="flex flex-col gap-2.5 text-[15px] text-white/90">
+              <ul className="hidden flex-col gap-2.5 text-[15px] text-white/90 lg:flex">
                 {['دریافت خودکار شناسه یکتای حافظه مالیاتی', 'ثبت توسط بیمارستان یا مرکز درمانی طرف قرارداد', 'مطابق الزامات سازمان امور مالیاتی'].map((t) => (
                   <li key={t} className="flex items-center gap-2.5">
                     <span className="grid size-5 shrink-0 place-items-center rounded-full bg-sun text-navy">
@@ -147,7 +147,7 @@ export function Landing({ onLoggedIn }: Props) {
             <LoginCard ref={loginRef} onLoggedIn={onLoggedIn} />
           </div>
 
-          <dl className="grid grid-cols-3 gap-2 border-t border-white/10 py-6 text-center lg:py-8">
+          <dl className="hidden grid-cols-3 gap-2 border-t border-white/10 py-8 text-center lg:grid">
             {stats.map((s) => (
               <div key={s.label} className="flex flex-col gap-1">
                 <dt className="order-2 text-[12.5px] text-sun/90 sm:text-sm">{s.label}</dt>
