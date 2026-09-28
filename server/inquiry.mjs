@@ -12,7 +12,14 @@
  *   not found → { "error": true, "message": "4170 : شماره اقتصادی وارد شده یافت نشد.", … }
  *
  * The URL lives only in .env (INQUIRY_URL) and is never sent to the browser or logged.
+ *
+ * The service only answers Iranian IPs. When INQUIRY_TUNNEL=127.0.0.1:<port> is set,
+ * requests are sent into an SSH reverse tunnel opened from a machine inside Iran
+ * (see docs/relay-fa.md). The Host header and TLS name stay those of INQUIRY_URL,
+ * so the service sees a normal request.
  */
+import http from 'node:http'
+import https from 'node:https'
 
 const NOT_FOUND_CODE = '4170'
 
@@ -26,30 +33,64 @@ export function createInquiry(env) {
   /** nationalCode → { at, files } */
   const cache = new Map()
 
+  const tunnel = (env.INQUIRY_TUNNEL || '').trim()
+
+  /** POST JSON to INQUIRY_URL, optionally through the tunnel. Resolves { status, body }. */
+  function post(payload) {
+    const u = new URL(url)
+    const secure = u.protocol === 'https:'
+    const [tHost, tPort] = tunnel ? tunnel.split(':') : []
+    const data = Buffer.from(JSON.stringify(payload))
+    return new Promise((resolve, reject) => {
+      const req = (secure ? https : http).request(
+        {
+          host: tHost || u.hostname,
+          port: Number(tPort) || Number(u.port) || (secure ? 443 : 80),
+          path: u.pathname + u.search,
+          method: 'POST',
+          servername: secure ? u.hostname : undefined, // TLS name check against the real host
+          headers: {
+            Host: u.host,
+            'Content-Type': 'application/json-patch+json',
+            Accept: 'application/json',
+            'Content-Length': data.length,
+          },
+          timeout: timeoutMs,
+        },
+        (res) => {
+          const chunks = []
+          res.on('data', (c) => chunks.push(c))
+          res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }))
+        },
+      )
+      req.on('timeout', () => req.destroy(new Error('timeout')))
+      req.on('error', reject)
+      req.end(data)
+    })
+  }
+
   async function lookup(economicCode) {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json-patch+json', Accept: 'application/json' },
-        body: JSON.stringify({ economicCode }),
-        signal: ctrl.signal,
-      })
-      const data = await res.json().catch(() => null)
+      const { status, body } = await post({ economicCode })
+      let data = null
+      try {
+        data = JSON.parse(body)
+      } catch {
+        /* not JSON */
+      }
       if (data && data.error === false && data.data) return { kind: 'found', data: data.data }
       if (data && data.error === true && String(data.message ?? '').trim().startsWith(NOT_FOUND_CODE)) return { kind: 'none' }
       if (data && data.error === true) return { kind: 'none', note: String(data.message ?? '').slice(0, 120) }
-      return { kind: 'failed', note: `HTTP ${res.status}` }
+      return { kind: 'failed', note: `HTTP ${status}` }
     } catch (e) {
-      return { kind: 'failed', note: e.name === 'AbortError' ? 'timeout' : e.message }
-    } finally {
-      clearTimeout(timer)
+      return { kind: 'failed', note: e.code || e.message }
     }
   }
 
   return {
     configured: Boolean(url),
+    viaTunnel: Boolean(url && tunnel),
+    lookup,
 
     /**
      * Returns the tax files for a national code.

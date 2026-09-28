@@ -225,7 +225,7 @@ const server = http.createServer(async (req, res) => {
   const ip = (TRUST_PROXY && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || '?'
   try {
     if (req.url?.startsWith('/api/')) {
-      if (req.method === 'GET' && req.url === '/api/health') return send(res, 200, { ok: true, sms: sms.name, inquiry: inquiry.configured })
+      if (req.method === 'GET' && req.url === '/api/health') return send(res, 200, { ok: true, sms: sms.name, inquiry: inquiry.configured, tunnel: inquiry.viaTunnel })
       if (req.method === 'GET' && req.url === '/api/files') return send(res, ...(await listFiles(req)))
       if (req.method !== 'POST') return send(res, 405, { error: 'method_not_allowed' })
       const body = await readJson(req)
@@ -246,5 +246,5 @@ const server = http.createServer(async (req, res) => {
 })
 
 server.listen(PORT, HOST, () => {
-  console.log(`Asan server on http://${HOST}:${PORT}  (sms: ${sms.name}, inquiry: ${inquiry.configured ? 'on' : 'off → demo files'})`)
+  console.log(`Asan server on http://${HOST}:${PORT}  (sms: ${sms.name}, inquiry: ${inquiry.configured ? (inquiry.viaTunnel ? 'on via tunnel' : 'on') : 'off → demo files'})`)
 })
