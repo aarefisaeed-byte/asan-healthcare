@@ -4,16 +4,18 @@
  *
  *   POST /api/otp/send    { nationalCode, mobile }  → { ttl }
  *   POST /api/otp/verify  { nationalCode, mobile, code } → { user }
- *   GET  /api/health      → { ok, sms }
+ *   GET  /api/files       → { files } | 501 not_configured   (needs login session)
+ *   GET  /api/health      → { ok, sms, inquiry }
  *
  * Configuration comes from `.env` next to package.json (see .env.example).
  */
 import http from 'node:http'
-import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { extname, join, normalize, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createSmsProvider } from './sms.mjs'
+import { createInquiry } from './inquiry.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 try {
@@ -34,6 +36,8 @@ const SECRET = env.OTP_SECRET || randomInt(1e9).toString(36) + Date.now().toStri
 const DIST = join(ROOT, 'dist')
 
 const sms = createSmsProvider(env)
+const inquiry = createInquiry(env)
+const SESSION_MINUTES = Number(env.SESSION_MINUTES || 60)
 
 /* ───────────── validation ───────────── */
 
@@ -66,6 +70,35 @@ setInterval(() => {
   const now = Date.now()
   for (const [m, o] of otps) if (o.expiresAt < now - 60_000) otps.delete(m)
   for (const [k, list] of hits) if (!list.some((t) => now - t < 86_400_000)) hits.delete(k)
+}, 60_000).unref()
+
+/* ───────────── login sessions (cookie → national code) ───────────── */
+
+/** token → { nationalCode, mobile, expiresAt } */
+const sessions = new Map()
+
+function createSession(nationalCode, mobile) {
+  const token = randomBytes(24).toString('base64url')
+  sessions.set(token, { nationalCode, mobile, expiresAt: Date.now() + SESSION_MINUTES * 60_000 })
+  return token
+}
+
+function getSession(req) {
+  const m = /(?:^|;\s*)asan_sid=([\w-]+)/.exec(req.headers.cookie || '')
+  const s = m && sessions.get(m[1])
+  if (!s || s.expiresAt < Date.now()) return null
+  s.expiresAt = Date.now() + SESSION_MINUTES * 60_000 // sliding expiry
+  return s
+}
+
+function sessionCookie(req, token) {
+  const secure = req.headers['x-forwarded-proto'] === 'https' || req.socket.encrypted
+  return `asan_sid=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_MINUTES * 60}${secure ? '; Secure' : ''}`
+}
+
+setInterval(() => {
+  const now = Date.now()
+  for (const [t, s] of sessions) if (s.expiresAt < now) sessions.delete(t)
 }, 60_000).unref()
 
 /* ───────────── Shahkar (mock until the real service is connected) ───────────── */
@@ -119,7 +152,18 @@ async function verifyOtp(body) {
   otps.delete(mobile)
 
   if (!(await shahkarMatches(nationalCode, mobile))) return [400, { error: 'shahkar_mismatch' }]
-  return [200, { user: { fullName: env.DEMO_USER_NAME || 'دکتر پرهام جلالی', nationalCode, mobile } }]
+  return [200, { user: { fullName: env.DEMO_USER_NAME || '', nationalCode, mobile } }]
+}
+
+async function listFiles(req) {
+  const session = getSession(req)
+  if (!session) return [401, { error: 'unauthorized' }]
+  if (!inquiry.configured) return [501, { error: 'not_configured' }]
+  try {
+    return [200, { files: await inquiry.listFiles(session.nationalCode) }]
+  } catch {
+    return [502, { error: 'service_unavailable' }]
+  }
 }
 
 /* ───────────── http plumbing ───────────── */
@@ -136,8 +180,8 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
 }
 
-function send(res, status, payload) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+function send(res, status, payload, headers = {}) {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers })
   res.end(JSON.stringify(payload))
 }
 
@@ -181,11 +225,17 @@ const server = http.createServer(async (req, res) => {
   const ip = (TRUST_PROXY && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || '?'
   try {
     if (req.url?.startsWith('/api/')) {
-      if (req.method === 'GET' && req.url === '/api/health') return send(res, 200, { ok: true, sms: sms.name })
+      if (req.method === 'GET' && req.url === '/api/health') return send(res, 200, { ok: true, sms: sms.name, inquiry: inquiry.configured })
+      if (req.method === 'GET' && req.url === '/api/files') return send(res, ...(await listFiles(req)))
       if (req.method !== 'POST') return send(res, 405, { error: 'method_not_allowed' })
       const body = await readJson(req)
       if (req.url === '/api/otp/send') return send(res, ...(await sendOtp(body, ip)))
-      if (req.url === '/api/otp/verify') return send(res, ...(await verifyOtp(body)))
+      if (req.url === '/api/otp/verify') {
+        const [status, payload] = await verifyOtp(body)
+        if (status !== 200) return send(res, status, payload)
+        const token = createSession(payload.user.nationalCode, payload.user.mobile)
+        return send(res, 200, payload, { 'Set-Cookie': sessionCookie(req, token) })
+      }
       return send(res, 404, { error: 'not_found' })
     }
     return serveStatic(req, res)
@@ -196,5 +246,5 @@ const server = http.createServer(async (req, res) => {
 })
 
 server.listen(PORT, HOST, () => {
-  console.log(`Asan server on http://${HOST}:${PORT}  (sms: ${sms.name})`)
+  console.log(`Asan server on http://${HOST}:${PORT}  (sms: ${sms.name}, inquiry: ${inquiry.configured ? 'on' : 'off → demo files'})`)
 })

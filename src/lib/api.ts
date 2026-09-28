@@ -77,7 +77,7 @@ export async function verifyLoginOtp(nationalCode: string, mobile: string, code:
 
 /* ───────────────────────── Tax files ───────────────────────── */
 
-export type FileStatus = 'active' | 'unassigned' | 'note2' | 'over_limit' | 'no_file' | 'banned_temp' | 'banned_perm'
+export type FileStatus = 'active' | 'unassigned' | 'note2' | 'over_limit' | 'no_file' | 'banned_temp' | 'banned_perm' | 'inactive'
 
 export const FILE_STATUS: Record<FileStatus, { label: string; tone: 'ok' | 'neutral' | 'warn' | 'danger'; selectable: boolean; reason?: string }> = {
   active: { label: 'فعال', tone: 'ok', selectable: true },
@@ -87,6 +87,7 @@ export const FILE_STATUS: Record<FileStatus, { label: string; tone: 'ok' | 'neut
   no_file: { label: 'بدون پرونده مالیاتی', tone: 'neutral', selectable: false, reason: 'برای این کسب‌وکار پرونده مالیاتی تشکیل نشده است.' },
   banned_temp: { label: 'غیرمجاز موقت', tone: 'danger', selectable: false, reason: 'این پرونده موقتاً امکان صدور صورتحساب ندارد.' },
   banned_perm: { label: 'غیرمجاز دائم', tone: 'danger', selectable: false, reason: 'این پرونده امکان صدور صورتحساب ندارد.' },
+  inactive: { label: 'غیرفعال', tone: 'danger', selectable: false, reason: 'این پرونده در سازمان امور مالیاتی فعال نیست.' },
 }
 
 export type TaxFile = {
@@ -94,6 +95,8 @@ export type TaxFile = {
   title: string
   economicNumber: string
   status: FileStatus
+  /** Status wording from the tax organisation, when it differs from the generic label. */
+  statusText?: string
   /** Memory ID already registered with Keysun as trusted company, if any. */
   keysunMemoryId?: string
   /** Memory ID registered elsewhere (another trusted company or self). */
@@ -109,10 +112,38 @@ const FILES: TaxFile[] = [
   { id: 'f6', title: 'مرکز تصویربرداری سپید', economicNumber: '10869988776', status: 'banned_perm' },
 ]
 
+/** Tax organisation status codes (taxpayerStatus) → our statuses. */
+const TAXPAYER_STATUS: Record<string, { status: FileStatus; text?: string }> = {
+  ACTIVE: { status: 'active' },
+  INACTIVE: { status: 'inactive' },
+  DEACTIVE: { status: 'inactive' },
+  DEACTIVATED: { status: 'inactive' },
+  SUSPENDED: { status: 'banned_temp', text: 'تعلیق‌شده' },
+  CANCELED: { status: 'inactive', text: 'ابطال‌شده' },
+  CANCELLED: { status: 'inactive', text: 'ابطال‌شده' },
+}
+
+type ServerFile = { id: string; economicNumber: string; title: string; taxpayerStatus: string }
+
+function mockFiles(user: User): TaxFile[] {
+  // Demo economic numbers follow the real rule: national code + 4-digit counter.
+  return FILES.map((f, i) => ({ ...f, economicNumber: user.nationalCode + String(i + 1).padStart(4, '0') }))
+}
+
 export async function fetchTaxFiles(user: User): Promise<TaxFile[]> {
+  if (USE_SERVER) {
+    const res = await fetch('/api/files', { credentials: 'same-origin' }).catch(() => null)
+    if (res?.status === 501) return mockFiles(user) // inquiry not configured on this server
+    if (!res || !res.ok) throw new ApiError('service_unavailable')
+    const { files } = (await res.json()) as { files: ServerFile[] }
+    return files.map((f) => {
+      const m = TAXPAYER_STATUS[f.taxpayerStatus] ?? { status: 'inactive' as FileStatus, text: f.taxpayerStatus || undefined }
+      return { id: f.id, title: f.title, economicNumber: f.economicNumber, status: m.status, statusText: m.text }
+    })
+  }
   await wait(900)
   if (user.mobile.endsWith('1111')) return []
-  return FILES
+  return mockFiles(user)
 }
 
 /* ───────────────────────── Permission to Keysun ───────────────────────── */

@@ -19,12 +19,16 @@ export function FilesStep({ user, files, setFiles, completed, onCancel, onNext }
   const [loading, setLoading] = useState(files === null)
   const [selected, setSelected] = useState<string | null>(null)
   const [keysunNotice, setKeysunNotice] = useState<TaxFile | null>(null)
+  const [failed, setFailed] = useState(false)
 
   const load = async () => {
     setLoading(true)
     setSelected(null)
+    setFailed(false)
     try {
       setFiles(await fetchTaxFiles(user))
+    } catch {
+      setFailed(true)
     } finally {
       setLoading(false)
     }
@@ -57,7 +61,19 @@ export function FilesStep({ user, files, setFiles, completed, onCancel, onNext }
         </div>
       )}
 
-      {!loading && files?.length === 0 && (
+      {!loading && failed && (
+        <div role="alert" className="mt-5 flex flex-col gap-3 rounded-xl border-r-4 border-warn bg-warn-50 p-4">
+          <div className="flex gap-3">
+            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-warn" aria-hidden />
+            <p className="text-[14.5px] leading-7 text-ink">ارتباط با سامانه استعلام سازمان امور مالیاتی برقرار نشد. چند لحظه بعد دوباره تلاش کنید.</p>
+          </div>
+          <Button className="w-fit self-end" onClick={load} icon={<RotateCw className="size-4" aria-hidden />}>
+            تلاش مجدد
+          </Button>
+        </div>
+      )}
+
+      {!loading && !failed && files?.length === 0 && (
         <div className="mt-5 flex flex-col gap-4">
           <div role="alert" className="flex flex-col gap-3 rounded-xl border-r-4 border-danger bg-danger-50 p-4">
             <div className="flex gap-3">
@@ -85,7 +101,7 @@ export function FilesStep({ user, files, setFiles, completed, onCancel, onNext }
         </div>
       )}
 
-      {!loading && files && files.length > 0 && (
+      {!loading && !failed && files && files.length > 0 && (
         <ul className="mt-5 grid gap-3 lg:grid-cols-2">
           {files.map((f, i) => {
             const st = FILE_STATUS[f.status]
@@ -104,7 +120,7 @@ export function FilesStep({ user, files, setFiles, completed, onCancel, onNext }
                     <span className="ml-1 font-medium text-muted">{toFa(i + 1)}.</span>
                     {f.title}
                   </h3>
-                  <Badge tone={st.tone}>{st.label}</Badge>
+                  <Badge tone={st.tone}>{f.statusText ?? st.label}</Badge>
                 </div>
                 <dl className="grid gap-1.5 text-[14px]">
                   <div className="flex gap-1.5">

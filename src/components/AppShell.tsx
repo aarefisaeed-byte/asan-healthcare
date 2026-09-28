@@ -30,7 +30,13 @@ export function AppShell({ user, onLogout, children }: Props) {
       </header>
       <div className="mx-auto max-w-6xl px-4 pb-32 pt-5 sm:px-6">
         <p className="text-[14.5px] text-muted">
-          <b className="font-bold text-navy">{user.fullName}</b>، به آسان خوش آمدید.
+          {user.fullName ? (
+            <>
+              <b className="font-bold text-navy">{user.fullName}</b>، به آسان خوش آمدید.
+            </>
+          ) : (
+            'به آسان خوش آمدید.'
+          )}
         </p>
         {children}
       </div>
