@@ -8,7 +8,7 @@ import {
   Clock3,
   FileCheck2,
   Link2,
-  PackageX,
+  KeyRound,
   ShieldCheck,
   Stethoscope,
   UserRound,
@@ -59,7 +59,7 @@ const audiences = [
 ]
 
 const benefits = [
-  { icon: PackageX, title: 'بدون خرید بسته', text: 'برای ثبت صورتحساب به خرید بسته نیاز ندارید.' },
+  { icon: KeyRound, title: 'ثبت خودکار شناسه حافظه', text: 'شناسه یکتای حافظه مالیاتی را معتمد کیسان از طرف شما دریافت و ثبت می‌کند.' },
   { icon: Workflow, title: 'فرایند ساده', text: 'ثبت و مدیریت صورتحساب را نماینده انجام می‌دهد و درگیری شما به حداقل می‌رسد.' },
   { icon: Clock3, title: 'صرفه‌جویی در زمان', text: 'وقت خود را صرف بیماران کنید، نه فرم‌های مالیاتی.' },
   { icon: Link2, title: 'مطابق الزامات سازمان', text: 'ارسال صورتحساب از طریق معتمد مالیاتی کیسان و مطابق الزامات سازمان امور مالیاتی انجام می‌شود.' },
@@ -114,11 +114,8 @@ export function Landing({ onLoggedIn }: Props) {
         <Circuits className="pointer-events-none absolute -right-40 -top-10 hidden w-[380px] rotate-180 text-white/[0.04] lg:block" />
 
         <div className="relative mx-auto max-w-6xl px-4 sm:px-6" style={{ paddingTop: 'calc(16px + env(safe-area-inset-top, 0px))' }}>
-          <nav className="flex items-center justify-between py-2">
+          <nav className="flex items-center py-2">
             <Logo tone="light" size="sm" />
-            <button onClick={goToLogin} className="rounded-lg border border-white/25 px-4 py-2 text-[14px] font-bold text-white hover:bg-white/10">
-              ورود
-            </button>
           </nav>
 
           <div className="grid items-center gap-8 pb-10 pt-8 lg:grid-cols-[1.1fr_1fr] lg:gap-16 lg:pb-20 lg:pt-14">
@@ -130,13 +127,13 @@ export function Landing({ onLoggedIn }: Props) {
               <h1 className="text-[40px] font-black leading-[1.25] sm:text-5xl lg:text-6xl">
                 صدور صورتحساب
                 <br />
-                <span className="text-sun">بدون خرید بسته</span>
+                <span className="text-sun">ویژه حوزه درمان</span>
               </h1>
               <p className="max-w-md text-[16px] leading-8 text-white/80">
                 صورتحساب‌های خدمات درمانی خود را از طریق نماینده مورد اعتماد، ساده‌تر و بدون دردسر ثبت کنید.
               </p>
               <ul className="flex flex-col gap-2.5 text-[15px] text-white/90">
-                {['بدون نیاز به خرید بسته ثبت صورتحساب', 'ثبت توسط بیمارستان یا مرکز درمانی طرف قرارداد', 'مطابق الزامات سازمان امور مالیاتی'].map((t) => (
+                {['دریافت خودکار شناسه یکتای حافظه مالیاتی', 'ثبت توسط بیمارستان یا مرکز درمانی طرف قرارداد', 'مطابق الزامات سازمان امور مالیاتی'].map((t) => (
                   <li key={t} className="flex items-center gap-2.5">
                     <span className="grid size-5 shrink-0 place-items-center rounded-full bg-sun text-navy">
                       <Check className="size-3.5" strokeWidth={3} aria-hidden />

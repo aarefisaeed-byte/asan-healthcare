@@ -1,26 +1,128 @@
-import { useEffect, useState } from 'react'
-import { FolderSearch } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import { Landing } from './pages/Landing'
+import { FilesStep } from './pages/FilesStep'
+import { PermissionStep } from './pages/PermissionStep'
+import { BuyersStep } from './pages/BuyersStep'
+import { SuccessStep } from './pages/SuccessStep'
 import { AppShell } from './components/AppShell'
-import type { User } from './lib/api'
+import { ExitConfirm } from './components/flow'
+import { FILE_STATUS, type Buyer, type TaxFile, type User } from './lib/api'
+
+type Screen = 'files' | 'permission' | 'buyers' | 'success'
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
+  const [screen, setScreen] = useState<Screen>('files')
+  const [files, setFiles] = useState<TaxFile[] | null>(null)
+  const [file, setFile] = useState<TaxFile | null>(null)
+  const [memoryId, setMemoryId] = useState<string | null>(null)
+  const [buyers, setBuyers] = useState<Buyer[]>([])
+  const [completed, setCompleted] = useState<string[]>([])
+  const [exitOpen, setExitOpen] = useState(false)
+
+  const reset = useCallback(() => {
+    setUser(null)
+    setScreen('files')
+    setFiles(null)
+    setFile(null)
+    setMemoryId(null)
+    setBuyers([])
+    setCompleted([])
+    setExitOpen(false)
+  }, [])
+
+  /** Move forward and record it, so the phone's back button walks back through the steps. */
+  const go = useCallback((s: Screen) => {
+    setScreen(s)
+    try {
+      history.pushState({ screen: s }, '')
+    } catch {
+      /* history may be unavailable in embedded previews */
+    }
+  }, [])
+
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const s = (e.state as { screen?: Screen } | null)?.screen
+      if (!s) return reset()
+      setScreen(s === 'success' ? 'files' : s)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [reset])
 
   useEffect(() => {
     window.scrollTo({ top: 0 })
-  }, [user])
+  }, [user, screen])
 
-  if (!user) return <Landing onLoggedIn={setUser} />
+  if (!user)
+    return (
+      <Landing
+        onLoggedIn={(u) => {
+          setUser(u)
+          go('files')
+        }}
+      />
+    )
+
+  const remaining = (files ?? []).filter((f) => FILE_STATUS[f.status].selectable && !completed.includes(f.id)).length
 
   return (
-    <AppShell user={user} onLogout={() => setUser(null)}>
-      {/* Step 2 (file selection) is built in the next stage. */}
-      <div className="mt-10 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-6 py-14 text-center">
-        <FolderSearch className="size-10 text-navy-600" aria-hidden />
-        <h1 className="text-xl font-bold">ورود با موفقیت انجام شد</h1>
-        <p className="max-w-sm text-[14.5px] leading-7 text-muted">صفحه انتخاب پرونده مالیاتی در قدم بعدی ساخته می‌شود.</p>
-      </div>
+    <AppShell user={user} onLogout={() => setExitOpen(true)}>
+      {screen === 'files' && (
+        <FilesStep
+          user={user}
+          files={files}
+          setFiles={setFiles}
+          completed={completed}
+          onCancel={() => setExitOpen(true)}
+          onNext={(f, hasKeysun) => {
+            setFile(f)
+            setMemoryId(hasKeysun ? f.keysunMemoryId ?? null : null)
+            go(hasKeysun ? 'buyers' : 'permission')
+          }}
+        />
+      )}
+
+      {screen === 'permission' && file && (
+        <PermissionStep
+          file={file}
+          onCancel={() => setExitOpen(true)}
+          onBack={() => go('files')}
+          onNext={(id) => {
+            setMemoryId(id)
+            go('buyers')
+          }}
+        />
+      )}
+
+      {screen === 'buyers' && file && (
+        <BuyersStep
+          file={file}
+          onCancel={() => setExitOpen(true)}
+          onDone={(b) => {
+            setBuyers(b)
+            setCompleted((c) => [...c, file.id])
+            go('success')
+          }}
+        />
+      )}
+
+      {screen === 'success' && file && (
+        <SuccessStep
+          file={file}
+          memoryId={memoryId}
+          buyers={buyers}
+          remaining={remaining}
+          onAnother={() => {
+            setFile(null)
+            go('files')
+          }}
+          onFinish={reset}
+        />
+      )}
+
+      <ExitConfirm open={exitOpen} onCancel={() => setExitOpen(false)} onConfirm={reset} />
     </AppShell>
   )
 }
