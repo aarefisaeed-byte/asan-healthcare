@@ -15,7 +15,8 @@ export const LoginCard = forwardRef<HTMLDivElement, Props>(function LoginCard({ 
   const [touched, setTouched] = useState({ nc: false, mobile: false })
   const [sending, setSending] = useState(false)
   const [otpOpen, setOtpOpen] = useState(false)
-  const [dialog, setDialog] = useState<null | 'mismatch' | 'service'>(null)
+  const [ttl, setTtl] = useState(120)
+  const [dialog, setDialog] = useState<null | 'mismatch' | 'service' | 'limited'>(null)
 
   const ncValid = isValidNationalCode(nationalCode)
   const mobileValid = isValidMobile(mobile)
@@ -29,10 +30,10 @@ export const LoginCard = forwardRef<HTMLDivElement, Props>(function LoginCard({ 
     if (!ncValid || !mobileValid) return
     setSending(true)
     try {
-      await sendLoginOtp(nationalCode, mobile)
+      setTtl(await sendLoginOtp(nationalCode, mobile))
       setOtpOpen(true)
     } catch (err) {
-      setDialog(err instanceof ApiError && err.code === 'service_unavailable' ? 'service' : 'service')
+      setDialog(err instanceof ApiError && err.code === 'rate_limited' ? 'limited' : 'service')
     } finally {
       setSending(false)
     }
@@ -107,6 +108,7 @@ export const LoginCard = forwardRef<HTMLDivElement, Props>(function LoginCard({ 
 
       <LoginOtpModal
         open={otpOpen}
+        seconds={ttl}
         nationalCode={nationalCode}
         mobile={mobile}
         onClose={() => setOtpOpen(false)}
@@ -155,6 +157,19 @@ export const LoginCard = forwardRef<HTMLDivElement, Props>(function LoginCard({ 
               تلاش مجدد
             </Button>
           </>
+        }
+      />
+
+      <Modal
+        open={dialog === 'limited'}
+        onClose={() => setDialog(null)}
+        icon={<AlertCircle className="mt-0.5 size-6 shrink-0 text-warn" aria-hidden />}
+        title="تعداد درخواست‌ها زیاد است"
+        subtitle="برای امنیت حساب شما، ارسال کد برای این شماره موقتاً محدود شده است. کمی بعد دوباره تلاش کنید."
+        footer={
+          <Button variant="outline" block onClick={() => setDialog(null)}>
+            متوجه شدم
+          </Button>
         }
       />
     </div>

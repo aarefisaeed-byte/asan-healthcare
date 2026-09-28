@@ -3,7 +3,8 @@
  * so the mock implementations can later be swapped for real services
  * (Asan OTP, Shahkar, tax organisation, Keysun) without touching the screens.
  *
- * Demo scenarios (mock mode):
+ * Login OTP goes through the real server in production builds (see server/).
+ * Demo scenarios (mock mode — preview build, and still mocked parts in production):
  *  Login
  *  - OTP code 000000                → «کد نادرست است»
  *  - mobile ending in 0000          → Shahkar mismatch (mobile not owned by national code)
@@ -14,7 +15,7 @@
  *  Anything else succeeds.
  */
 
-export type ApiErrorCode = 'otp_invalid' | 'otp_expired' | 'shahkar_mismatch' | 'service_unavailable'
+export type ApiErrorCode = 'otp_invalid' | 'otp_expired' | 'shahkar_mismatch' | 'service_unavailable' | 'rate_limited' | 'too_many_attempts'
 
 export class ApiError extends Error {
   code: ApiErrorCode
@@ -33,15 +34,40 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /* ───────────────────────── Login ───────────────────────── */
 
+/**
+ * The production build talks to our server (/api), which sends a real SMS.
+ * The single-file preview (`npm run build:single`) has no server, so it uses the mock.
+ */
+export const USE_SERVER = import.meta.env.MODE !== 'single'
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  } catch {
+    throw new ApiError('service_unavailable')
+  }
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const known: ApiErrorCode[] = ['otp_invalid', 'otp_expired', 'shahkar_mismatch', 'service_unavailable', 'rate_limited', 'too_many_attempts']
+    throw new ApiError(known.includes(data.error) ? data.error : 'service_unavailable')
+  }
+  return data as T
+}
+
 let otpIssuedAt = 0
 
-export async function sendLoginOtp(_nationalCode: string, mobile: string): Promise<void> {
+/** Sends the login code. Resolves with the seconds the code stays valid. */
+export async function sendLoginOtp(nationalCode: string, mobile: string): Promise<number> {
+  if (USE_SERVER) return (await post<{ ttl: number }>('/api/otp/send', { nationalCode, mobile })).ttl
   await wait(700)
   if (mobile === '09129999999') throw new ApiError('service_unavailable')
   otpIssuedAt = Date.now()
+  return OTP_TTL_SECONDS
 }
 
 export async function verifyLoginOtp(nationalCode: string, mobile: string, code: string): Promise<User> {
+  if (USE_SERVER) return (await post<{ user: User }>('/api/otp/verify', { nationalCode, mobile, code })).user
   await wait(900)
   if (Date.now() - otpIssuedAt > OTP_TTL_SECONDS * 1000) throw new ApiError('otp_expired')
   if (code === '000000') throw new ApiError('otp_invalid')

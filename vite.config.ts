@@ -8,4 +8,6 @@ import { viteSingleFile } from 'vite-plugin-singlefile'
 export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss(), ...(mode === 'single' ? [viteSingleFile()] : [])],
   build: mode === 'single' ? { outDir: 'dist-single' } : { outDir: 'dist' },
+  // `npm run dev` forwards API calls to the local server (`npm start`)
+  server: { proxy: { '/api': 'http://127.0.0.1:3000' } },
 }))

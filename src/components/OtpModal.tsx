@@ -9,6 +9,8 @@ export const otpMessages: Record<string, string> = {
   otp_invalid: 'کد واردشده درست نیست. کد پیامک‌شده را دوباره بررسی کنید.',
   otp_expired: 'اعتبار این کد تمام شده است. کد جدید دریافت کنید.',
   service_unavailable: 'ارتباط با سامانه برقرار نشد. چند لحظه بعد دوباره تلاش کنید.',
+  too_many_attempts: 'تعداد تلاش‌ها بیش از حد مجاز شد. کد جدید دریافت کنید.',
+  rate_limited: 'درخواست‌های ارسال کد بیش از حد مجاز است. کمی بعد دوباره تلاش کنید.',
 }
 
 type Props = {
@@ -20,24 +22,30 @@ type Props = {
   onClose: () => void
   /** Throw ApiError to show an inline error. Return normally on success. */
   onSubmit: (code: string) => Promise<void>
-  onResend: () => Promise<void>
+  /** May resolve with the new code lifetime in seconds. */
+  onResend: () => Promise<number | void>
+  /** Seconds left on the code when the sheet opens. */
+  seconds?: number
   /** Called for error codes the caller wants to handle itself (e.g. Shahkar mismatch). */
   onOtherError?: (code: string) => void
 }
 
 /** Six-digit code sheet with countdown and resend — used for login and for the tax organisation's code. */
-export function OtpModal({ open, title, subtitle, info, submitLabel, onClose, onSubmit, onResend, onOtherError }: Props) {
+export function OtpModal({ open, title, subtitle, info, submitLabel, onClose, onSubmit, onResend, onOtherError, seconds = OTP_TTL_SECONDS }: Props) {
   const [code, setCode] = useState('')
   const [left, setLeft] = useState(OTP_TTL_SECONDS)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [resending, setResending] = useState(false)
+  const [locked, setLocked] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setCode('')
     setError(null)
-    setLeft(OTP_TTL_SECONDS)
+    setLocked(false)
+    setLeft(seconds)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   useEffect(() => {
@@ -58,7 +66,8 @@ export function OtpModal({ open, title, subtitle, info, submitLabel, onClose, on
       const c = e instanceof ApiError ? e.code : 'service_unavailable'
       if (otpMessages[c]) setError(otpMessages[c])
       else onOtherError?.(c)
-      if (c === 'otp_invalid') setCode('')
+      if (c === 'otp_invalid' || c === 'too_many_attempts') setCode('')
+      if (c === 'too_many_attempts') setLocked(true)
     } finally {
       setBusy(false)
     }
@@ -68,11 +77,12 @@ export function OtpModal({ open, title, subtitle, info, submitLabel, onClose, on
     setResending(true)
     setError(null)
     try {
-      await onResend()
+      const ttl = await onResend()
       setCode('')
-      setLeft(OTP_TTL_SECONDS)
-    } catch {
-      setError(otpMessages.service_unavailable)
+      setLocked(false)
+      setLeft(typeof ttl === 'number' ? ttl : OTP_TTL_SECONDS)
+    } catch (e) {
+      setError(otpMessages[e instanceof ApiError ? e.code : 'service_unavailable'] ?? otpMessages.service_unavailable)
     } finally {
       setResending(false)
     }
@@ -89,7 +99,7 @@ export function OtpModal({ open, title, subtitle, info, submitLabel, onClose, on
           <Button variant="outline" onClick={onClose} className="w-[36%]">
             برگشت
           </Button>
-          <Button className="flex-1" disabled={code.length !== OTP_LENGTH} loading={busy} onClick={submit} icon={<ArrowLeft className="size-5" aria-hidden />}>
+          <Button className="flex-1" disabled={code.length !== OTP_LENGTH || locked} loading={busy} onClick={submit} icon={<ArrowLeft className="size-5" aria-hidden />}>
             {submitLabel}
           </Button>
         </>
@@ -123,7 +133,7 @@ export function OtpModal({ open, title, subtitle, info, submitLabel, onClose, on
         <span className="text-muted">
           زمان باقی‌مانده: <b className={`font-bold ${expired ? 'text-danger' : 'text-[#0a8ad6]'}`}>{formatTimer(Math.max(left, 0))}</b>
         </span>
-        <button onClick={resend} disabled={!expired || resending} className="inline-flex items-center gap-1 font-medium text-navy-600 disabled:text-[#a9adb8]">
+        <button onClick={resend} disabled={!(expired || locked) || resending} className="inline-flex items-center gap-1 font-medium text-navy-600 disabled:text-[#a9adb8]">
           <RotateCw className={`size-4 ${resending ? 'animate-spin' : ''}`} aria-hidden />
           ارسال مجدد کد
         </button>

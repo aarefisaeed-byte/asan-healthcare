@@ -1,0 +1,200 @@
+/**
+ * Asan server — serves the built site (dist/) and the login OTP API.
+ * No dependencies beyond Node.js 20+.
+ *
+ *   POST /api/otp/send    { nationalCode, mobile }  → { ttl }
+ *   POST /api/otp/verify  { nationalCode, mobile, code } → { user }
+ *   GET  /api/health      → { ok, sms }
+ *
+ * Configuration comes from `.env` next to package.json (see .env.example).
+ */
+import http from 'node:http'
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
+import { readFile, stat } from 'node:fs/promises'
+import { extname, join, normalize, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { createSmsProvider } from './sms.mjs'
+
+const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
+try {
+  process.loadEnvFile(join(ROOT, '.env'))
+} catch {
+  /* no .env — rely on real environment variables */
+}
+const env = process.env
+
+const PORT = Number(env.PORT || 3000)
+const HOST = env.HOST || '127.0.0.1'
+const OTP_TTL = Number(env.OTP_TTL_SECONDS || 120)
+const MAX_ATTEMPTS = Number(env.OTP_MAX_ATTEMPTS || 5)
+const IP_SENDS_PER_HOUR = Number(env.OTP_IP_SENDS_PER_HOUR || 10)
+const MOBILE_SENDS_PER_DAY = Number(env.OTP_MOBILE_SENDS_PER_DAY || 8)
+const TRUST_PROXY = env.TRUST_PROXY === 'true'
+const SECRET = env.OTP_SECRET || randomInt(1e9).toString(36) + Date.now().toString(36)
+const DIST = join(ROOT, 'dist')
+
+const sms = createSmsProvider(env)
+
+/* ───────────── validation ───────────── */
+
+const isMobile = (m) => typeof m === 'string' && /^09\d{9}$/.test(m)
+function isNationalCode(c) {
+  if (typeof c !== 'string' || !/^\d{10}$/.test(c) || /^(\d)\1{9}$/.test(c)) return false
+  const sum = [...c.slice(0, 9)].reduce((a, d, i) => a + Number(d) * (10 - i), 0)
+  const r = sum % 11
+  return Number(c[9]) === (r < 2 ? r : 11 - r)
+}
+
+/* ───────────── in-memory stores ───────────── */
+
+/** mobile → { hash, nationalCode, expiresAt, sentAt, attempts } */
+const otps = new Map()
+/** key → timestamps[] (sliding windows) */
+const hits = new Map()
+
+const hashCode = (mobile, code) => createHash('sha256').update(`${SECRET}:${mobile}:${code}`).digest()
+
+function countRecent(key, windowMs) {
+  const now = Date.now()
+  const list = (hits.get(key) || []).filter((t) => now - t < windowMs)
+  hits.set(key, list)
+  return list.length
+}
+const record = (key) => hits.get(key)?.push(Date.now()) ?? hits.set(key, [Date.now()])
+
+setInterval(() => {
+  const now = Date.now()
+  for (const [m, o] of otps) if (o.expiresAt < now - 60_000) otps.delete(m)
+  for (const [k, list] of hits) if (!list.some((t) => now - t < 86_400_000)) hits.delete(k)
+}, 60_000).unref()
+
+/* ───────────── Shahkar (mock until the real service is connected) ───────────── */
+
+async function shahkarMatches(_nationalCode, mobile) {
+  // Demo rule: a mobile ending in 0000 does not belong to the national code.
+  return !mobile.endsWith('0000')
+}
+
+/* ───────────── handlers ───────────── */
+
+async function sendOtp(body, ip) {
+  const { nationalCode, mobile } = body
+  if (!isNationalCode(nationalCode) || !isMobile(mobile)) return [400, { error: 'invalid_input' }]
+
+  const existing = otps.get(mobile)
+  const now = Date.now()
+  if (existing && existing.expiresAt > now && existing.nationalCode === nationalCode) {
+    // A live code was already sent — tell the client how long it has left instead of re-sending.
+    return [200, { ttl: Math.ceil((existing.expiresAt - now) / 1000), reused: true }]
+  }
+  if (countRecent(`ip:${ip}`, 3_600_000) >= IP_SENDS_PER_HOUR || countRecent(`m:${mobile}`, 86_400_000) >= MOBILE_SENDS_PER_DAY) {
+    return [429, { error: 'rate_limited' }]
+  }
+
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
+  try {
+    await sms.sendOtp(mobile, code)
+  } catch (e) {
+    console.error(`[otp] send failed for ${mobile.slice(0, 4)}***${mobile.slice(-4)}:`, e.message)
+    return [502, { error: 'service_unavailable' }]
+  }
+  record(`ip:${ip}`)
+  record(`m:${mobile}`)
+  otps.set(mobile, { hash: hashCode(mobile, code), nationalCode, expiresAt: now + OTP_TTL * 1000, sentAt: now, attempts: 0 })
+  return [200, { ttl: OTP_TTL }]
+}
+
+async function verifyOtp(body) {
+  const { nationalCode, mobile, code } = body
+  if (!isNationalCode(nationalCode) || !isMobile(mobile) || typeof code !== 'string' || !/^\d{6}$/.test(code)) {
+    return [400, { error: 'otp_invalid' }]
+  }
+  const o = otps.get(mobile)
+  if (!o || o.nationalCode !== nationalCode || o.expiresAt < Date.now()) return [400, { error: 'otp_expired' }]
+  if (o.attempts >= MAX_ATTEMPTS) return [429, { error: 'too_many_attempts' }]
+  o.attempts++
+  if (!timingSafeEqual(o.hash, hashCode(mobile, code))) {
+    return [400, { error: o.attempts >= MAX_ATTEMPTS ? 'too_many_attempts' : 'otp_invalid' }]
+  }
+  otps.delete(mobile)
+
+  if (!(await shahkarMatches(nationalCode, mobile))) return [400, { error: 'shahkar_mismatch' }]
+  return [200, { user: { fullName: env.DEMO_USER_NAME || 'دکتر پرهام جلالی', nationalCode, mobile } }]
+}
+
+/* ───────────── http plumbing ───────────── */
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.woff2': 'font/woff2',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.json': 'application/json',
+  '.txt': 'text/plain; charset=utf-8',
+}
+
+function send(res, status, payload) {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+  res.end(JSON.stringify(payload))
+}
+
+async function readJson(req) {
+  let size = 0
+  const chunks = []
+  for await (const c of req) {
+    size += c.length
+    if (size > 10_000) throw new Error('too large')
+    chunks.push(c)
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+}
+
+async function serveStatic(req, res) {
+  const url = new URL(req.url, 'http://x')
+  let path = normalize(decodeURIComponent(url.pathname)).replace(/^([/\\])+/, '')
+  let file = join(DIST, path)
+  if (!file.startsWith(DIST)) return send(res, 403, { error: 'forbidden' })
+  try {
+    if (!(await stat(file)).isFile()) throw new Error()
+  } catch {
+    file = join(DIST, 'index.html') // single-page app fallback
+    path = 'index.html'
+  }
+  try {
+    const data = await readFile(file)
+    const immutable = path.startsWith('assets/')
+    res.writeHead(200, {
+      'Content-Type': MIME[extname(file)] || 'application/octet-stream',
+      'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
+    })
+    res.end(data)
+  } catch {
+    send(res, 404, { error: 'not_found', hint: 'Run `npm run build` first.' })
+  }
+}
+
+const server = http.createServer(async (req, res) => {
+  const ip = (TRUST_PROXY && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || '?'
+  try {
+    if (req.url?.startsWith('/api/')) {
+      if (req.method === 'GET' && req.url === '/api/health') return send(res, 200, { ok: true, sms: sms.name })
+      if (req.method !== 'POST') return send(res, 405, { error: 'method_not_allowed' })
+      const body = await readJson(req)
+      if (req.url === '/api/otp/send') return send(res, ...(await sendOtp(body, ip)))
+      if (req.url === '/api/otp/verify') return send(res, ...(await verifyOtp(body)))
+      return send(res, 404, { error: 'not_found' })
+    }
+    return serveStatic(req, res)
+  } catch (e) {
+    console.error('[server]', e)
+    return send(res, 400, { error: 'bad_request' })
+  }
+})
+
+server.listen(PORT, HOST, () => {
+  console.log(`Asan server on http://${HOST}:${PORT}  (sms: ${sms.name})`)
+})

@@ -4,6 +4,7 @@ import { maskMobile } from '../lib/format'
 
 type Props = {
   open: boolean
+  seconds: number
   nationalCode: string
   mobile: string
   onClose: () => void
@@ -11,10 +12,11 @@ type Props = {
   onMismatch: () => void
 }
 
-export function LoginOtpModal({ open, nationalCode, mobile, onClose, onVerified, onMismatch }: Props) {
+export function LoginOtpModal({ open, seconds, nationalCode, mobile, onClose, onVerified, onMismatch }: Props) {
   return (
     <OtpModal
       open={open}
+      seconds={seconds}
       title="تأیید شماره موبایل"
       subtitle="کد تأیید پیامک‌شده را وارد کنید."
       info={
