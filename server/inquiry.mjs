@@ -25,8 +25,8 @@ const NOT_FOUND_CODE = '4170'
 
 export function createInquiry(env) {
   const url = env.INQUIRY_URL
-  const maxCounter = Number(env.INQUIRY_MAX_COUNTER || 20)
-  const concurrency = Number(env.INQUIRY_CONCURRENCY || 5)
+  const maxCounter = Number(env.INQUIRY_MAX_COUNTER || 10)
+  const concurrency = Number(env.INQUIRY_CONCURRENCY || 10)
   const timeoutMs = Number(env.INQUIRY_TIMEOUT_MS || 8000)
   const cacheMs = Number(env.INQUIRY_CACHE_MINUTES || 10) * 60_000
 
