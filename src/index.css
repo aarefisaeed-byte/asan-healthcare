@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+@font-face { font-family: "Kalameh"; font-weight: 400; font-display: swap; src: url("./assets/fonts/KalamehWeb-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Kalameh"; font-weight: 500; font-display: swap; src: url("./assets/fonts/KalamehWeb-Medium.woff2") format("woff2"); }
+@font-face { font-family: "Kalameh"; font-weight: 600; font-display: swap; src: url("./assets/fonts/KalamehWeb-SemiBold.woff2") format("woff2"); }
+@font-face { font-family: "Kalameh"; font-weight: 700; font-display: swap; src: url("./assets/fonts/KalamehWeb-Bold.woff2") format("woff2"); }
+@font-face { font-family: "Kalameh"; font-weight: 900; font-display: swap; src: url("./assets/fonts/KalamehWeb-Black.woff2") format("woff2"); }
+
+/* Asan brand tokens (from the brand sheet) */
+@theme {
+  --font-sans: "Kalameh", Tahoma, "Segoe UI", sans-serif;
+
+  --color-navy: #0e225b;
+  --color-navy-700: #152e73;
+  --color-navy-600: #1d3c8f;
+  --color-navy-50: #eef1f8;
+  --color-sun: #ffc34a;
+  --color-sun-600: #e0a52c;
+  --color-mist: #e6e7e8;
+
+  --color-ink: #161a26;
+  --color-muted: #5a6072;
+  --color-line: #d8dbe3;
+  --color-surface: #f5f6f9;
+
+  --color-danger: #b8322c;
+  --color-danger-50: #fdecea;
+  --color-ok: #1f7a4d;
+  --color-ok-50: #e6f4ec;
+  --color-warn: #a86a00;
+  --color-warn-50: #fff4dc;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: #fff;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3 { text-wrap: balance; }
+
+:focus-visible { outline: 2px solid var(--color-navy-600); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+@keyframes sheet-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.anim-sheet { animation: sheet-up 0.22s ease-out; }
+.anim-fade { animation: fade-in 0.18s ease-out; }
