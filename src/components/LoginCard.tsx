@@ -146,8 +146,8 @@ export const LoginCard = forwardRef<HTMLDivElement, Props>(function LoginCard({ 
         open={dialog === 'service'}
         onClose={() => setDialog(null)}
         icon={<AlertCircle className="mt-0.5 size-6 shrink-0 text-warn" aria-hidden />}
-        title="اختلال موقت در سرویس"
-        subtitle="ارتباط با سامانه استعلام برقرار نشد. اطلاعات شما حفظ شده است؛ چند لحظه بعد دوباره تلاش کنید."
+        title="پیامک ارسال نشد"
+        subtitle="پیامک کد تأیید ارسال نشد. اطلاعات شما حفظ شده است؛ چند لحظه بعد دوباره تلاش کنید."
         footer={
           <>
             <Button variant="outline" className="w-[38%]" onClick={() => setDialog(null)}>
