@@ -14,6 +14,7 @@ import {
   UserRound,
   Workflow,
 } from 'lucide-react'
+import { EnamadSeal } from '../components/EnamadSeal'
 import { Logo } from '../components/Logo'
 import { LoginCard } from '../components/LoginCard'
 import type { User } from '../lib/api'
@@ -302,6 +303,7 @@ export function Landing({ onLoggedIn }: Props) {
             ارسال صورتحساب از طریق معتمد مالیاتی کیسان
             <BadgeCheck className="size-4 text-navy-600" aria-hidden />
           </p>
+          <EnamadSeal />
         </div>
       </footer>
     </div>
